@@ -87,20 +87,7 @@ class Network:
                 line=Line(label,dist)
                 self.line[label]=line
         self.connect()
-        df = pd.DataFrame(columns=['Path', 'Accumulated latency', 'Accumulated noise', 'signal to noise ratio'])
-        for keys in self.node.keys():
-            for keys2 in self.node.keys():
-                if keys != keys2:
-                    paths = self.find_all_paths(keys, keys2)
-                    for path in paths:
-                        signal_power=1#added 28/12
-                        signal_information = Signal_information(signal_power, path)
-                        self.propagate(signal_information)
-                        df1 = pd.DataFrame({'Path': [path], 'Accumulated latency': [signal_information.latency],
-                                            "accumulated noise": [signal_information.noise_power],
-                                            "signal to noise ratio": [10 * np.log10(
-                                                signal_information.signal_power / signal_information.noise_power)]})
-                        df = pd.concat([df, df1])
+
 
 
 
