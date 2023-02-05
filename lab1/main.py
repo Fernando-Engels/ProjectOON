@@ -169,7 +169,7 @@ if __name__ == '__main__':#Create a main that constructs the network defined by 
 #runs its method stream over 100 connections with signal power equal
 #to 1 mW and the input and output nodes randomly chosen. This run has
 #to be performed in turn for latency and snr path choice. Accordingly, plot
-#the distribution of all the latencies or the snrs.
+#the distribution of all the latencies orr the snrs.
     pp=Network("nodes.json")
     df = pd.DataFrame(columns=['Path', 'Accumulated latency', 'Accumulated noise', 'signal to noise ratio'])
     for keys in pp.node.keys():
