@@ -7,6 +7,7 @@ import json
 import matplotlib.pyplot as plt
 import pandas as pd
 import random
+from tabulate import tabulate
 
 class Signal_information:
     pass
@@ -180,10 +181,12 @@ if __name__ == '__main__':#Create a main that constructs the network defined by 
                     signal_information = Signal_information(signal_power, path)
                     pp.propagate(signal_information)
                     df1 = pd.DataFrame({'Path': [path], 'Accumulated latency': [signal_information.latency],
-                                        "accumulated noise": [signal_information.noise_power],
+                                        "Accumulated noise": [signal_information.noise_power],
                                         "signal to noise ratio": [10 * np.log10(
                                             signal_information.signal_power / signal_information.noise_power)]})
                     df = pd.concat([df, df1])
 
-    df.style
+
+    print(df)
+
     pp.draw()
