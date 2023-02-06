@@ -24,7 +24,11 @@ class Signal_information:
         self.latency=latency
     def change_path(self,path):
         self.path=path
-
+class Lightpath(Signal_information):
+    pass
+    def __init__(self, channel,signal_power,path):
+        super().__init__(signal_power,path)
+        self.channel=channel
 class Node:
     pass
     def __init__(self,node_dict):
@@ -39,9 +43,19 @@ class Node:
             next_line=self.label+next_node
             self.successive[next_line].propagate(signal_information)
 
+
         if not signal_information.path:
             return
 
+    def probe(self, signal_information):
+        signal_information.change_path(signal_information.path[1:])
+        if signal_information.path:
+            next_node = signal_information.path[0]
+            next_line = self.label + next_node
+            self.successive[next_line].probe(signal_information)
+
+        if not signal_information.path:
+            return
 
         #
 
@@ -51,7 +65,7 @@ class Line:
         self.successive={}
         self.label=label
         self.length=length
-        self.state=1
+        self.state=10*[1]
 
     def latency_generation(self,signal_information):
         latency=self.length/((2/3)*3e8)
@@ -68,8 +82,16 @@ class Line:
         signal_information.change_latency(signal_information.latency + latency)
         signal_information.change_noise_power(signal_information.noise_power + noise)
         next_node=signal_information.path[0]
+        #self.state[Signal_information.channel]=0
         self.successive[next_node].propagate(signal_information)
 
+    def probe(self, signal_information):
+        latency=self.latency_generation(signal_information)
+        noise=self.noise_generation(signal_information)
+        signal_information.change_latency(signal_information.latency + latency)
+        signal_information.change_noise_power(signal_information.noise_power + noise)
+        next_node=signal_information.path[0]
+        self.successive[next_node].probe(signal_information)
 
 class Network:
     pass
@@ -96,7 +118,7 @@ class Network:
                     for path in paths:
                         signal_power=1#added 28/12
                         signal_information = Signal_information(signal_power, path)
-                        self.propagate(signal_information)
+                        self.probe(signal_information)
                         df1 = pd.DataFrame({'Path': [path], 'Accumulated latency': [signal_information.latency],
                                             "Accumulated noise": [signal_information.noise_power],
                                             "signal to noise ratio": [10 * np.log10(
@@ -104,7 +126,28 @@ class Network:
                         df = pd.concat([df, df1])
                         del signal_information
         self.weighted_paths=df
+        df2 = pd.DataFrame(
+            columns=['Path', 'ch 1', 'ch 2', 'ch 3', 'ch 4', 'ch 5', 'ch 6', 'ch 7', 'ch 8', 'ch 9', 'ch 10'])
 
+        for keys in self.node.keys():
+            for keys2 in self.node.keys():
+                if keys != keys2:
+                    paths = self.find_all_paths(keys, keys2)
+                    for path in paths:
+                        df22 = pd.DataFrame({'Path': [path]})
+                        for ch in range(1, 11):
+                            flag = [1] * 11
+                            for n in range(len(path) - 1):
+                                if self.line[path[n] + path[n + 1]].state[ch - 1] == 0:
+                                    flag[ch] = 0
+                                    break;
+
+                        df22 = pd.DataFrame({'Path': [path], 'ch 1': [flag[1]], 'ch 2': [flag[2]], 'ch 3': [flag[3]],
+                                             'ch 4': [flag[4]], 'ch 5': [flag[5]], 'ch 6': [flag[6]], 'ch 7': [flag[7]],
+                                             'ch 8': [flag[8]], 'ch 9': [flag[9]], 'ch 10': [flag[10]]})
+                        df2 = pd.concat([df2, df22])
+
+        self.route_space = df2
 
 
                #create weithte path with dataframe
@@ -138,6 +181,14 @@ class Network:
         first_node=signal_information.path[0]
         self.node[first_node].propagate(signal_information)
         return signal_information
+
+    def probe (self,signal_information):#this function has to propagate the
+    #signal information through the path specified in it and returns the
+    #modified spectral information;
+        first_node=signal_information.path[0]
+        self.node[first_node].probe(signal_information)
+        return signal_information
+
     def draw(self):#this function has to draw the network using matplotlib
     #(nodes as dots and connection as lines)
         x=[]
@@ -158,15 +209,25 @@ class Network:
     def find_best_snr(self,node1,node2):#Define a method find best latency() in the class Network that, given
     #a pair of input and output nodes, returns the path that connects the two
     #nodes with the best (lowest) latency introduced by the signal propagation.
+
+        mask = (self.weighted_paths.iloc[:, 0].str[0]).str.startswith(node1.label, na=False)
+        df2=self.weighted_paths.loc[mask]
+        mask2 = (df2.iloc[:, 0].str[-1]).str.startswith(node2.label, na=False)
+        df2=df2.loc[mask2]
+
+
         start=node1.label
         end=node2.label
-        signal_power=1
+
         paths=self.find_all_paths(start,end)
         best_snr=0
 
-        for path in paths:
+
+        for path in df2["Path"]:
+
+
             flag = 0
-            signal_information=[]
+
             for n in range(len(path)-1):
                 if self.line[path[n]+path[n+1]].state==0:
                     flag=1
@@ -174,28 +235,30 @@ class Network:
             if flag:
                 continue;
 
-            signal_information=Signal_information(signal_power,path)
-            self.propagate(signal_information)
-            snr=signal_information.signal_power / signal_information.noise_power
-            if snr>best_snr:
-                best_snr=snr
+
+
+            if df2.loc[df2['Path'].map(tuple) == tuple(path), 'signal to noise ratio'].values[0] > best_snr:
+                best_snr=df2.loc[df2['Path'].map(tuple) == tuple(path), 'signal to noise ratio'].values[0]
                 best_path=path
 
         return best_path
     def find_best_latency(self,node1,node2):#Define a method find best latency() in the class Network that, given
     #a pair of input and output nodes, returns the path that connects the two
     #nodes with the best (lowest) latency introduced by the signal propagation.
-        start=node1.label
-        end=node2.label
-        signal_power=1
-        paths=self.find_all_paths(start,end)
-        latency=[]
-        flag=0
-        inv_best_latency=0
-        best_path=[]
-        for path in paths:
+        mask = (self.weighted_paths.iloc[:, 0].str[0]).str.startswith(node1.label, na=False)
+        df2 = self.weighted_paths.loc[mask]
+        mask2 = (df2.iloc[:, 0].str[-1]).str.startswith(node2.label, na=False)
+        df2 = df2.loc[mask2]
+
+        start = node1.label
+        end = node2.label
+
+        paths = self.find_all_paths(start, end)
+        best_inv_latency = 0
+
+        for path in df2["Path"]:
             flag = 0
-            signal_information = []
+
             for n in range(len(path) - 1):
                 if self.line[path[n] + path[n + 1]].state == 0:
                     flag = 1
@@ -203,13 +266,10 @@ class Network:
             if flag:
                 continue;
 
-            signal_information=Signal_information(signal_power,path)
-            self.propagate(signal_information)
-            latency=signal_information.latency
+            if df2.loc[df2['Path'].map(tuple) == tuple(path), 'Accumulated latency'].values[0] > best_inv_latency:
+                best_snr = df2.loc[df2['Path'].map(tuple) == tuple(path), 'Accumulated latency'].values[0]
+                best_path = path
 
-            if (1/latency)>inv_best_latency:
-                    inv_best_latency=(1/latency)
-                    best_path=path
         return best_path
     def stream(self,list_conn,label="latency"):#Define the method stream in the class Network that, for each element
     #of a given list of instances of the class Connection, sets its latency
@@ -272,8 +332,9 @@ if __name__ == '__main__':#Create a main that constructs the network defined by 
 #to 1 mW and the input and output nodes randomly chosen. This run has
 #to be performed in turn for latency and snr path choice. Accordingly, plot
 #the distribution of all the latencies orr the snrs.
-    pp = Network("nodes.json")
 
+    pp=Network("Nodes.json")
+    #
     signal_power=0.001
     list_latency=[]
     list_snr=[]
