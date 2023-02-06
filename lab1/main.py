@@ -36,6 +36,7 @@ class Node:
         self.label=next(iter(node_dict))
         self.connected_nodes=node_dict[self.label]["connected_nodes"]
         self.position=node_dict[self.label]["position"]
+        self.switching_matrix=dict()
     def propagate(self,signal_information):
         signal_information.change_path(signal_information.path[1:])
         if signal_information.path:
@@ -149,6 +150,23 @@ class Network:
 
         self.route_space = df2
 
+    def update_route_space(self):
+
+        for path in self.route_space['Path']:
+            x = [1] * len(self.line[list(self.line.keys())[0]].state)
+            for n in range(len(path)-1):
+                state = self.line[path[n] + path[n + 1]].state
+                x=[x * state for x, state in zip(x, state)]
+                if n!=0 and n!=(len(path)-1):
+                    y=self.node[path[n]].switching_matrix[path[n-1]][path[n+1]]
+                    x=[x * y for x, y in zip(x, y)]
+
+            for i in range(len(x)):
+
+                    self.route_space.loc[
+                        self.route_space['Path'].map(tuple) == tuple(path), 'ch ' + str(
+                            i + 1)] = x[i]
+
 
                #create weithte path with dataframe
     def connect(self):# this function has to set the successive attributes of all
@@ -157,6 +175,13 @@ class Network:
            for j in self.node:
                if (i+j) in self.line.keys():
                    self.node[i].successive[i+j]=self.line[i+j]
+                   self.node[i].switching_matrix[j] = dict()
+               for f in self.node:
+                    if (i+j)  in self.line.keys() and (i+f) in self.line.keys():
+                       if j==f:
+                           self.node[i].switching_matrix[j][j] = [0] * len(self.line[list(self.line.keys())[0]].state)
+                       if j!=f:
+                           self.node[i].switching_matrix[j][f] = [1] * len(self.line[list(self.line.keys())[0]].state)
         for p in self.line:
             self.line[p].successive[p[1]]=self.node[p[1]]
 
