@@ -26,7 +26,7 @@ class Signal_information:
         self.path=path
 class Lightpath(Signal_information):
     pass
-    def __init__(self, channel,signal_power,path):
+    def __init__(self, signal_power,path,channel):
         super().__init__(signal_power,path)
         self.channel=channel
 class Node:
@@ -82,7 +82,7 @@ class Line:
         signal_information.change_latency(signal_information.latency + latency)
         signal_information.change_noise_power(signal_information.noise_power + noise)
         next_node=signal_information.path[0]
-        #self.state[Signal_information.channel]=0
+        self.state[signal_information.channel-1]=0
         self.successive[next_node].propagate(signal_information)
 
     def probe(self, signal_information):
@@ -178,8 +178,10 @@ class Network:
     def propagate (self,signal_information):#this function has to propagate the
     #signal information through the path specified in it and returns the
     #modified spectral information;
+        self.route_space.loc[self.route_space['Path'].map(tuple) == tuple(signal_information.path), 'ch ' + str(signal_information.channel)] = 0
         first_node=signal_information.path[0]
         self.node[first_node].propagate(signal_information)
+
         return signal_information
 
     def probe (self,signal_information):#this function has to propagate the
@@ -206,7 +208,7 @@ class Network:
 
         plt.show()
         return
-    def find_best_snr(self,node1,node2):#Define a method find best latency() in the class Network that, given
+    def find_best_snr(self,node1,node2,ch):#Define a method find best latency() in the class Network that, given
     #a pair of input and output nodes, returns the path that connects the two
     #nodes with the best (lowest) latency introduced by the signal propagation.
 
@@ -215,7 +217,7 @@ class Network:
         mask2 = (df2.iloc[:, 0].str[-1]).str.startswith(node2.label, na=False)
         df2=df2.loc[mask2]
 
-
+        best_path=[]
         start=node1.label
         end=node2.label
 
@@ -229,20 +231,21 @@ class Network:
             flag = 0
 
             for n in range(len(path)-1):
-                if self.line[path[n]+path[n+1]].state==0:
+                if self.line[path[n]+path[n+1]].state[ch-1]==0:
                     flag=1
                     break;
             if flag:
                 continue;
 
-
+            if self.route_space.loc[self.route_space['Path'].map(tuple) == tuple(path), 'ch ' + str(ch)].values[0]==0:
+                continue;
 
             if df2.loc[df2['Path'].map(tuple) == tuple(path), 'signal to noise ratio'].values[0] > best_snr:
                 best_snr=df2.loc[df2['Path'].map(tuple) == tuple(path), 'signal to noise ratio'].values[0]
                 best_path=path
 
         return best_path
-    def find_best_latency(self,node1,node2):#Define a method find best latency() in the class Network that, given
+    def find_best_latency(self,node1,node2,ch):#Define a method find best latency() in the class Network that, given
     #a pair of input and output nodes, returns the path that connects the two
     #nodes with the best (lowest) latency introduced by the signal propagation.
         mask = (self.weighted_paths.iloc[:, 0].str[0]).str.startswith(node1.label, na=False)
@@ -253,6 +256,7 @@ class Network:
         start = node1.label
         end = node2.label
 
+        best_path = []
         paths = self.find_all_paths(start, end)
         best_inv_latency = 0
 
@@ -260,10 +264,13 @@ class Network:
             flag = 0
 
             for n in range(len(path) - 1):
-                if self.line[path[n] + path[n + 1]].state == 0:
+                if self.line[path[n] + path[n + 1]].state[ch-1] == 0:
                     flag = 1
                     break;
             if flag:
+                continue;
+
+            if self.route_space.loc[self.route_space['Path'].map(tuple) == tuple(path), 'ch ' + str(ch)].values[0]==0:
                 continue;
 
             if df2.loc[df2['Path'].map(tuple) == tuple(path), 'Accumulated latency'].values[0] > best_inv_latency:
@@ -271,7 +278,7 @@ class Network:
                 best_path = path
 
         return best_path
-    def stream(self,list_conn,label="latency"):#Define the method stream in the class Network that, for each element
+    def stream(self,list_conn,ch,label="latency"):#Define the method stream in the class Network that, for each element
     #of a given list of instances of the class Connection, sets its latency
     #and snr attribute. These values have to be calculated propagating a
     #SignalInformation instance that has the path that connects the input
@@ -283,9 +290,9 @@ class Network:
         path=[]
         if label=="snr":
             for conn in list_conn:
-                path=self.find_best_snr(self.node[conn.input],self.node[conn.output])
+                path=self.find_best_snr(self.node[conn.input],self.node[conn.output],ch)
                 if path:
-                    signal_information=Signal_information(conn.signal_power,path)
+                    signal_information=Lightpath(conn.signal_power,path,ch)
                     self.propagate(signal_information)
                     conn.latency=signal_information.latency
                     conn.snr=10*np.log10(signal_information.signal_power/signal_information.noise_power)
@@ -295,9 +302,9 @@ class Network:
 
         if label=="latency":
             for conn in list_conn:
-                path = self.find_best_latency(self.node[conn.input],self.node[conn.output])
+                path = self.find_best_latency(self.node[conn.input],self.node[conn.output],ch)
                 if path:
-                    signal_information = Signal_information(conn.signal_power, path)
+                    signal_information = Signal_information(conn.signal_power, path,ch)
                     self.propagate(signal_information)
                     conn.latency = signal_information.latency
                     conn.snr = 10 * np.log10(signal_information.signal_power / signal_information.noise_power)
@@ -339,38 +346,40 @@ if __name__ == '__main__':#Create a main that constructs the network defined by 
     list_latency=[]
     list_snr=[]
     list_snr2=[]
-    for i in range(100):
-        conn=[]
-        if i%2:
-            label="snr"
-        else:
-            label="latency"
-        [input,output]=random.sample(list(pp.node),2)
 
-        conn=Connection(signal_power,input,output)
-        pp.stream([conn],label)
-        if label=="snr":
-            list_snr.append(conn.snr)
-        else:
-            list_latency.append(conn.latency)
-
-    plt.hist((list_latency))
-    plt.xlabel("latency")
-    plt.ylabel("Counts")
-    plt.show()
-
-    plt.figure(2)
-    plt.hist(list_snr)
-    plt.xlabel("Snr")
-    plt.ylabel("Counts")
-    plt.show()
+    # for i in range(100):
+    #     conn=[]
+    #     if i%2:
+    #         label="snr"
+    #     else:
+    #         label="latency"
+    #     [input,output]=random.sample(list(pp.node),2)
+    #
+    #     conn=Connection(signal_power,input,output)
+    #     pp.stream([conn],label)
+    #     if label=="snr":
+    #         list_snr.append(conn.snr)
+    #     else:
+    #         list_latency.append(conn.latency)
+    #
+    # plt.hist((list_latency))
+    # plt.xlabel("latency")
+    # plt.ylabel("Counts")
+    # plt.show()
+    #
+    # plt.figure(2)
+    # plt.hist(list_snr)
+    # plt.xlabel("Snr")
+    # plt.ylabel("Counts")
+    # plt.show()
 
     for i in range(100):
         conn = []
         [input, output] = random.sample(list(pp.node), 2)
+        ch=random.randrange(1, 11, 1)
         label="snr"
         conn = Connection(signal_power, input, output)
-        pp.stream([conn], label)
+        pp.stream([conn], ch,label)
 
         list_snr2.append(conn.snr)
     plt.figure(3)
@@ -378,4 +387,5 @@ if __name__ == '__main__':#Create a main that constructs the network defined by 
     plt.xlabel("Snr")
     plt.ylabel("Counts")
     plt.show()
+    print(list_snr2)
 
