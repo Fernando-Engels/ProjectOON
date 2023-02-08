@@ -66,6 +66,7 @@ class Node:
         if signal_information.path:
             next_node=signal_information.path[0]
             next_line=self.label+next_node
+            self.successive[next_line].optimized_launch_power()
             self.successive[next_line].propagate(signal_information)
 
 
@@ -93,15 +94,15 @@ class Line:
         self.state=10*[1]
         self.n_amplifiers=np.divmod(length,80*10**3)[0]
         self.gain=10**1.6
-        self.noise_figure=100**0.55
-        self.physical_feat=[0.0460517*1*10**-3,2.13*10**-26*1*10**-24*1*10**-3,1.27*10**-3]
-
+        self.noise_figure=10**0.55
+        self.physical_feat=[2.3025851*10**-5,2.13*10**-26,1.27*10**-3]
+        self.P_opt=0
     def latency_generation(self,signal_information):
         latency=self.length/((2/3)*3e8)
         return latency
 
     def noise_generation(self,signal_information):
-        noise=1e-9*signal_information.signal_power*self.length
+        noise=self.ase_generation()+self.nli_generation(signal_information.signal_power)
         return noise
 
 
@@ -130,14 +131,21 @@ class Line:
     def nli_generation(self,power):
         Nspan=self.n_amplifiers-1
         B_n=12.5*10**9
-        L_eff=self.length/Nspan
+
         R_s=32*10**9
         df=50*10**9
-        first_part=16/(27*np.pi)*np.log10(np.pi**2/2*self.physical_feat[1]*R_s**2/self.physical_feat[0]*10**(2*R_s/df))
-        sec_part=self.physical_feat[0]/self.physical_feat[1]*self.physical_feat[2]**2*L_eff**2/R_s**3
+        alfa=self.physical_feat[0]
+        beta=self.physical_feat[1]
+        gamma=self.physical_feat[2]
+        L_eff = 1 / (2 * alfa)
+        first_part=16/(27*np.pi)*np.log10(np.pi**2/2*beta*R_s**2/alfa*10**(2*R_s/df))
+        sec_part=alfa/beta*gamma**2*L_eff**2/R_s**3
         eta=first_part*sec_part
         Nli=power**3*eta*Nspan*B_n
         return Nli
+    def optimized_launch_power(self):
+        P_opt=(self.ase_generation()/(2*self.physical_feat[0]))**(1/3)
+        self.P_opt=P_opt
 class Network:
     pass
     def __init__(self,name_file):
@@ -368,8 +376,9 @@ class Network:
                 path=self.find_best_snr(self.node[conn.input],self.node[conn.output],ch)
 
                 if path:
-                    conn.bit_rate=self.calculate_bit_rate(path, self.node[path[0]].strategy)
-                    signal_information=Lightpath(conn.signal_power,path,ch)
+                    signal_information = Lightpath(conn.signal_power, path, ch)
+                    conn.bit_rate = self.calculate_bit_rate(signal_information, self.node[path[0]].strategy)
+
 
                     self.propagate(signal_information)
                     conn.latency=signal_information.latency
@@ -385,8 +394,9 @@ class Network:
 
                 path = self.find_best_latency(self.node[conn.input],self.node[conn.output],ch)
                 if path:
-                    conn.bit_rate=self.calculate_bit_rate(path, self.node[path[0]].strategy)
-                    signal_information = Signal_information(conn.signal_power, path,ch)
+
+                    signal_information = Lightpath(conn.signal_power, path,ch)
+                    conn.bit_rate = self.calculate_bit_rate(signal_information, self.node[path[0]].strategy)
                     self.propagate(signal_information)
                     conn.latency = signal_information.latency
                     conn.snr = 10 * np.log10(signal_information.signal_power / signal_information.noise_power)
@@ -397,9 +407,10 @@ class Network:
         for n in range(len(self.node)):
             self.node[list(self.node.keys())[n]].switching_matrix = copy.deepcopy(origin_switching_matrices[n])
 
-    def calculate_bit_rate(self,path,strategy):
+    def calculate_bit_rate(self,light_path,strategy):
         Bert=1*10**-3
-        r_s=32 #Ghz
+        path=light_path.path
+        r_s=light_path.R_s
         b_n=12.5#Ghz
         gsnr=self.weighted_paths.loc[self.route_space['Path'].map(tuple) == tuple(path), 'signal to noise ratio'].values[0]
         if strategy=="fixed_rate":
@@ -420,6 +431,28 @@ class Network:
             Rb=2*r_s*np.log2(1+gsnr*r_s/b_n)
 
         return Rb
+    def stream_with_matrix(self,matrix,signal_power,label):
+
+        if not np.any(matrix):#the matrix is empty
+            return
+            print("the uniform matrix is empty")
+
+        while 1:
+            [input, output] =random.sample(list(pp.node), 2)
+            inmat=list(pp.node.keys()).index(input)
+            outmat=list(pp.node.keys()).index(output)
+            if matrix[inmat][outmat]:
+                break;
+
+        conn = Connection(signal_power, input, output)
+        self.stream([conn], label)
+        matrix[inmat][outmat]=matrix[inmat][outmat]-conn.bit_rate
+
+        return
+
+
+
+
 
 
 
@@ -433,7 +466,7 @@ class Connection:
         self.signal_power = signal_power
         self.latency = 0
         self.snr = 0
-        self.bit_rate="None"
+        self.bit_rate=0
 
         #plt.plot(*zip(*x), marker='o', color='r', ls='')
 
@@ -456,6 +489,20 @@ if __name__ == '__main__':#Create a main that constructs the network defined by 
     # pp = Network("nodes_not_full.json")
     # # #
     signal_power = 0.001
+    label="snr"
+    list_snr3 = []
+    list_snr4=[]
+    list_snr3_br=[]
+    list_snr4_br=[]
+    pp = Network("nodes_full_fixed_rate.json")
+    M=5
+    N=len(pp.node)
+    T_ij=np.array([100*M]*N**2).reshape(N,N)
+    for i in range(N):
+        T_ij[i][i]=0
+    for j in range(10):
+        pp.stream_with_matrix(T_ij,signal_power,label)
+    print(T_ij)
     # list_latency = []
     # list_snr = []
     # list_snr2 = []
@@ -479,12 +526,7 @@ if __name__ == '__main__':#Create a main that constructs the network defined by 
     #
     #
     #
-    list_snr3 = []
-    list_snr4=[]
-    list_snr3_br=[]
-    list_snr4_br=[]
-    pp = Network("nodes_full_fixed_rate.json")
-    pp.line["AB"].ase_generation()
+
     # conn = []
     # for i in range(100):
     #
