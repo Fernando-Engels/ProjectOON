@@ -362,9 +362,8 @@ class Network:
     #1path between the considered nodes. The choice of latency or snr has to
     #be made with a label passed as input to the stream function. The label
     #default value has to be set as latency
-        origin_switching_matrices=[0]*len(self.node)
-        for n in range(len(self.node)):
-            origin_switching_matrices[n]=copy.deepcopy(self.node[list(self.node.keys())[n]].switching_matrix)
+
+
 
 
         path=[]
@@ -404,8 +403,6 @@ class Network:
                     conn.latency = 0
                     conn.snr = "None"
 
-        for n in range(len(self.node)):
-            self.node[list(self.node.keys())[n]].switching_matrix = copy.deepcopy(origin_switching_matrices[n])
 
     def calculate_bit_rate(self,light_path,strategy):
         Bert=1*10**-3
@@ -433,6 +430,10 @@ class Network:
         return Rb
     def stream_with_matrix(self,matrix,signal_power,label):
 
+        origin_switching_matrices = [0] * len(self.node)
+        for n in range(len(self.node)):
+            origin_switching_matrices[n]=copy.deepcopy(self.node[list(self.node.keys())[n]].switching_matrix)
+
         if not np.any(matrix):#the matrix is empty
             return
             print("the uniform matrix is empty")
@@ -447,6 +448,10 @@ class Network:
         conn = Connection(signal_power, input, output)
         self.stream([conn], label)
         matrix[inmat][outmat]=matrix[inmat][outmat]-conn.bit_rate
+
+
+        for n in range(len(self.node)):
+            self.node[list(self.node.keys())[n]].switching_matrix = copy.deepcopy(origin_switching_matrices[n])
 
         return
 
@@ -500,8 +505,9 @@ if __name__ == '__main__':#Create a main that constructs the network defined by 
     T_ij=np.array([100*M]*N**2).reshape(N,N)
     for i in range(N):
         T_ij[i][i]=0
-    for j in range(10):
+    for j in range(100):
         pp.stream_with_matrix(T_ij,signal_power,label)
+
     print(T_ij)
     # list_latency = []
     # list_snr = []

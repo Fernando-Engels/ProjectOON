@@ -1,0 +1,56 @@
+{
+    "A": {
+        "connected_nodes": [
+            "B",
+            "C",
+            "D",
+            "E"
+        ],
+        "position": [
+            584864,
+            -180169
+        ]
+    },
+    "B": {
+        "connected_nodes": [
+            "A",
+            "C",
+            "D"
+        ],
+        "position": [
+            258967,
+            -137665
+        ]
+    },
+    "C": {
+        "connected_nodes": [
+            "A",
+            "B"
+        ],
+        "position": [
+            -285619,
+            -70491
+        ]
+    },
+    "D": {
+        "connected_nodes": [
+            "A",
+            "B",
+            "E"
+        ],
+        "position": [
+            -88600,
+            571014
+        ]
+    },
+    "E": {
+        "connected_nodes": [
+            "A",
+            "D"
+        ],
+        "position": [
+            83686,
+            405234
+        ]
+    }
+}
